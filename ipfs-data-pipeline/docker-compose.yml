@@ -1,0 +1,101 @@
+services:
+  # ─── IPFS Nodes ───────────────────────────────────────────
+  ipfs-node-0:
+    image: ipfs/kubo:v0.27.0
+    container_name: ipfs-node-0
+    ports:
+      - "5001:5001"   # API
+      - "8081:8080"   # Gateway
+    environment:
+      - IPFS_PROFILE=server
+    volumes:
+      - ipfs-node-0-data:/data/ipfs
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ipfs-node-1:
+    image: ipfs/kubo:v0.27.0
+    container_name: ipfs-node-1
+    ports:
+      - "5002:5001"
+      - "8082:8080"
+    environment:
+      - IPFS_PROFILE=server
+    volumes:
+      - ipfs-node-1-data:/data/ipfs
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ipfs-node-2:
+    image: ipfs/kubo:v0.27.0
+    container_name: ipfs-node-2
+    ports:
+      - "5003:5001"
+      - "8083:8080"
+    environment:
+      - IPFS_PROFILE=server
+    volumes:
+      - ipfs-node-2-data:/data/ipfs
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Pipeline Daemon ──────────────────────────────────────
+  pipeline-daemon:
+    build:
+      context: ./go-daemon
+      dockerfile: Dockerfile
+    container_name: pipeline-daemon
+    ports:
+      - "8080:8080"
+    environment:
+      - PIPELINE_HOST=0.0.0.0
+      - PIPELINE_PORT=8080
+      - IPFS_NODES=http://ipfs-node-0:5001,http://ipfs-node-1:5001,http://ipfs-node-2:5001
+      - SHARD_SIZE=1048576
+      - MIN_REPLICAS=2
+      - REPLICATION_CHECK_INTERVAL=30s
+      - DB_PATH=/data/pipeline.db
+    volumes:
+      - pipeline-data:/data
+    depends_on:
+      ipfs-node-0:
+        condition: service_healthy
+      ipfs-node-1:
+        condition: service_healthy
+      ipfs-node-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Python Client (for benchmarks/demos) ─────────────────
+  pipeline-client:
+    build:
+      context: ./python-client
+      dockerfile: Dockerfile
+    container_name: pipeline-client
+    environment:
+      - PIPELINE_API_URL=http://pipeline-daemon:8080
+    depends_on:
+      pipeline-daemon:
+        condition: service_healthy
+    profiles:
+      - tools
+    entrypoint: ["sleep", "infinity"]
+
+volumes:
+  ipfs-node-0-data:
+  ipfs-node-1-data:
+  ipfs-node-2-data:
+  pipeline-data:
